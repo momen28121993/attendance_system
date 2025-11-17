@@ -1,0 +1,6 @@
+Collecting numpy
+  Using cached numpy-2.2.6-cp310-cp310-macosx_14_0_arm64.whl.metadata (62 kB)
+Downloading numpy-2.2.6-cp310-cp310-macosx_14_0_arm64.whl (5.3 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 5.3/5.3 MB 47.9 kB/s  0:01:45
+Installing collected packages: numpy
+Successfully installed numpy-2.2.6

@@ -1,0 +1,15 @@
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Virtual environments
+.venv/
+env/
+venv/
+
+# OS artifacts
+.DS_Store
+
+# Data & logs (uncomment if you don't want to commit datasets/logs)
+# data/
+# logs/
