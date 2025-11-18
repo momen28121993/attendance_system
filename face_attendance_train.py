@@ -32,7 +32,11 @@ def train_siamese_model():
     
     face_embedder = FaceEmbedder(model_name=Config.EMBEDDING_MODEL)
     
-    dataset_manager = DatasetManager(DATASET_DIR, EMBEDDINGS_DIR)
+    dataset_manager = DatasetManager(
+        DATASET_DIR,
+        EMBEDDINGS_DIR,
+        embedding_dim=face_embedder.embedding_dim
+    )
     
     # Check if we have enough data
     embeddings = dataset_manager.get_all_embeddings()

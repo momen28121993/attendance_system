@@ -50,7 +50,11 @@ def main():
             sys.exit(0)
     
     print("\n4. Loading dataset...")
-    dataset_manager = DatasetManager(DATASET_DIR, EMBEDDINGS_DIR)
+    dataset_manager = DatasetManager(
+        DATASET_DIR,
+        EMBEDDINGS_DIR,
+        embedding_dim=face_embedder.embedding_dim
+    )
     
     if len(dataset_manager.list_people()) == 0:
         print("\n❌ Error: No people in dataset")

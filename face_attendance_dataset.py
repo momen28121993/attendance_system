@@ -3,30 +3,43 @@ Dataset Management Module
 Handles face dataset creation, storage, and embedding management
 """
 
-import os
 import cv2
 import numpy as np
-import pickle
 import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 import json
 import shutil
+import pickle
+
+try:
+    import faiss  # type: ignore
+except ImportError as exc:
+    raise ImportError(
+        "FAISS is required for vector storage. Install it with 'pip install faiss-cpu'."
+    ) from exc
 
 class DatasetManager:
     """Manage face dataset and embeddings"""
     
-    def __init__(self, dataset_dir: Path, embeddings_dir: Path):
+    def __init__(self, dataset_dir: Path, embeddings_dir: Path, embedding_dim: int = 512):
         self.dataset_dir = Path(dataset_dir)
         self.embeddings_dir = Path(embeddings_dir)
-        self.embeddings_file = self.embeddings_dir / "embeddings.pkl"
+        self.embedding_dim = embedding_dim
+        self.index_file = self.embeddings_dir / "embeddings.faiss"
+        self.labels_file = self.embeddings_dir / "embeddings_labels.json"
         self.metadata_file = self.embeddings_dir / "metadata.json"
+        self.legacy_embeddings_file = self.embeddings_dir / "embeddings.pkl"
         
         # Ensure directories exist
         self.dataset_dir.mkdir(parents=True, exist_ok=True)
         self.embeddings_dir.mkdir(parents=True, exist_ok=True)
         
-        # Load existing embeddings
+        # Load FAISS index/labels before caching embeddings
+        self.index = self._load_faiss_index()
+        self.vector_labels = self._load_vector_labels()
+        
+        # Load existing embeddings from FAISS
         self.embeddings_cache = self.load_embeddings()
         self.metadata = self.load_metadata()
     
@@ -128,7 +141,9 @@ class DatasetManager:
             return False
         
         # Update embeddings cache
-        self.embeddings_cache[name] = embeddings
+        existing = self.embeddings_cache.get(name, [])
+        existing.extend(embeddings)
+        self.embeddings_cache[name] = existing
         self.save_embeddings()
         
         # Update metadata
@@ -146,26 +161,100 @@ class DatasetManager:
         print(f"✓ Successfully added '{name}' with {captured} images")
         return True
     
-    def load_embeddings(self) -> Dict[str, List[np.ndarray]]:
-        """Load embeddings from disk"""
-        if self.embeddings_file.exists():
+    def _create_index(self):
+        """Create an empty FAISS index"""
+        return faiss.IndexFlatIP(self.embedding_dim)
+    
+    def _load_faiss_index(self):
+        """Load FAISS index from disk or create a new one"""
+        if self.index_file.exists():
             try:
-                with open(self.embeddings_file, 'rb') as f:
-                    embeddings = pickle.load(f)
-                print(f"✓ Loaded embeddings for {len(embeddings)} people")
-                return embeddings
+                index = faiss.read_index(str(self.index_file))
+                print(f"✓ Loaded FAISS index with {index.ntotal} embeddings")
+                return index
             except Exception as e:
-                print(f"⚠ Error loading embeddings: {e}")
+                print(f"⚠ Error loading FAISS index: {e}")
+        return self._create_index()
+    
+    def _load_vector_labels(self) -> List[str]:
+        """Load stored labels for each embedding in the FAISS index"""
+        if self.labels_file.exists():
+            try:
+                with open(self.labels_file, 'r') as f:
+                    labels = json.load(f)
+                return labels
+            except Exception as e:
+                print(f"⚠ Error loading embedding labels: {e}")
+        return []
+    
+    def _save_faiss_index(self):
+        """Persist FAISS index and labels"""
+        try:
+            faiss.write_index(self.index, str(self.index_file))
+            with open(self.labels_file, 'w') as f:
+                json.dump(self.vector_labels, f, indent=2)
+        except Exception as e:
+            print(f"❌ Error saving FAISS index: {e}")
+    
+    def _load_legacy_embeddings(self) -> Dict[str, List[np.ndarray]]:
+        """Load embeddings from the previous pickle format for migration"""
+        if self.legacy_embeddings_file.exists():
+            try:
+                with open(self.legacy_embeddings_file, 'rb') as f:
+                    data = pickle.load(f)
+                print("⚠ Legacy embeddings pickle detected. Migrating to FAISS...")
+                return data
+            except Exception as e:
+                print(f"⚠ Failed to load legacy embeddings: {e}")
         return {}
     
+    def load_embeddings(self) -> Dict[str, List[np.ndarray]]:
+        """Load embeddings from FAISS index"""
+        embeddings: Dict[str, List[np.ndarray]] = {}
+        if self.index is None or self.index.ntotal == 0:
+            legacy_embeddings = self._load_legacy_embeddings()
+            if legacy_embeddings:
+                self.embeddings_cache = legacy_embeddings
+                self.save_embeddings()
+                return legacy_embeddings
+            return embeddings
+        
+        if len(self.vector_labels) != self.index.ntotal:
+            print("⚠ Label count does not match FAISS index size. Rebuilding index metadata.")
+            self.vector_labels = self.vector_labels[:self.index.ntotal]
+        
+        for idx in range(min(len(self.vector_labels), self.index.ntotal)):
+            name = self.vector_labels[idx]
+            try:
+                vector = self.index.reconstruct(idx)
+            except Exception as e:
+                print(f"⚠ Failed to reconstruct embedding {idx}: {e}")
+                continue
+            embeddings.setdefault(name, []).append(vector)
+        
+        if embeddings:
+            print(f"✓ Loaded embeddings for {len(embeddings)} people from FAISS")
+        return embeddings
+    
     def save_embeddings(self):
-        """Save embeddings to disk"""
-        try:
-            with open(self.embeddings_file, 'wb') as f:
-                pickle.dump(self.embeddings_cache, f)
-            print(f"✓ Saved embeddings for {len(self.embeddings_cache)} people")
-        except Exception as e:
-            print(f"❌ Error saving embeddings: {e}")
+        """Save embeddings to FAISS index"""
+        vectors = []
+        labels = []
+        
+        for name, person_embeddings in self.embeddings_cache.items():
+            for embedding in person_embeddings:
+                if embedding is None:
+                    continue
+                vectors.append(np.asarray(embedding, dtype='float32'))
+                labels.append(name)
+        
+        self.index = self._create_index()
+        if vectors:
+            matrix = np.vstack(vectors).astype('float32')
+            self.index.add(matrix)
+        self.vector_labels = labels
+        self._save_faiss_index()
+        print(f"✓ Saved {len(labels)} embeddings across {len(self.embeddings_cache)} people to FAISS")
     
     def load_metadata(self) -> Dict:
         """Load metadata from disk"""

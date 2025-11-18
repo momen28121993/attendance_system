@@ -28,9 +28,10 @@ def resolve_siamese_model_path():
     Prefer an existing trained model from the shared 'model' folder, falling
     back to the default h5 path inside the data directory.
     """
+    facenet_path = MODELS_DIR / "siamese_facenet_model.h5"
     keras_path = MODELS_DIR / "siamese_model.keras"
     h5_path = MODELS_DIR / "siamese_model.h5"
-    for candidate in (keras_path, h5_path):
+    for candidate in (facenet_path, keras_path, h5_path):
         if candidate.exists():
             return candidate
     return h5_path

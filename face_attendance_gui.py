@@ -35,6 +35,7 @@ class AttendanceGUI:
         # Camera state
         self.camera_running = False
         self.cap = None
+        self.frame_interval_ms = 125  # ~8 frames per second
         
         # Create main window
         self.root = tk.Tk()
@@ -52,7 +53,6 @@ class AttendanceGUI:
         self.person_listbox = None
         self.person_details_text = None
         self.dataset_status_var = tk.StringVar(value="Dataset: 0 people")
-        self.person_var = tk.StringVar()
         self.person_info_text = None
         
         self.setup_ui()
@@ -136,24 +136,6 @@ class AttendanceGUI:
         ttk.Label(control_frame, textvariable=self.dataset_status_var).pack(pady=2)
         ttk.Button(control_frame, text="Open Dataset Manager",
                    command=self.open_dataset_manager).pack(fill=tk.X, pady=5)
-        # Manage dataset
-        ttk.Separator(control_frame, orient='horizontal').pack(fill=tk.X, pady=10)
-        ttk.Label(control_frame, text="Manage People", font=('Arial', 10, 'bold')).pack(pady=5)
-        
-        self.person_combo = ttk.Combobox(control_frame, textvariable=self.person_var, state="readonly")
-        self.person_combo.pack(fill=tk.X, pady=5)
-        
-        ttk.Button(control_frame, text="Refresh List",
-                   command=self.refresh_person_list).pack(fill=tk.X, pady=5)
-        
-        self.view_person_btn = ttk.Button(control_frame, text="View Person Info",
-                                          command=self.view_person_info)
-        self.view_person_btn.pack(fill=tk.X, pady=5)
-        
-        self.delete_person_btn = ttk.Button(control_frame, text="Delete Person",
-                                            command=self.delete_person)
-        self.delete_person_btn.pack(fill=tk.X, pady=5)
-        
         # Attendance
         ttk.Separator(control_frame, orient='horizontal').pack(fill=tk.X, pady=10)
         ttk.Button(control_frame, text="Show Today's Attendance", 
@@ -285,7 +267,7 @@ class AttendanceGUI:
             self.video_label.image = photo
         
         # Schedule next update
-        self.root.after(30, self.update_camera)
+        self.root.after(self.frame_interval_ms, self.update_camera)
     
     def add_person(self):
         """Add new person to dataset"""

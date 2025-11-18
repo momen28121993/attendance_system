@@ -15,6 +15,7 @@ import zipfile
 import tempfile
 import os
 import h5py
+import contextlib
 
 class SiameseNetwork:
     """
@@ -35,31 +36,42 @@ class SiameseNetwork:
         
         # Compute L1 distance between embeddings
         l1_distance = layers.Lambda(
-            lambda tensors: tf.abs(tensors[0] - tensors[1])
+            lambda tensors: tf.abs(tensors[0] - tensors[1]),
+            name='lambda_63'
         )([input_1, input_2])
         
-        # Dense layers for similarity learning (match trained model layout)
-        x = layers.Dense(128, activation='relu', name='dense')(l1_distance)
+        # Dense + BatchNorm + Dropout stack (mirrors exported model)
+        x = layers.Dense(256, activation='relu', name='dense_2')(l1_distance)
+        x = layers.BatchNormalization(name='batch_normalization')(x)
         x = layers.Dropout(0.3, name='dropout')(x)
-        x = layers.Dense(64, activation='relu', name='dense_1')(x)
+        
+        x = layers.Dense(128, activation='relu', name='dense_3')(x)
+        x = layers.BatchNormalization(name='batch_normalization_1')(x)
         x = layers.Dropout(0.2, name='dropout_1')(x)
-        x = layers.Dense(16, activation='relu', name='dense_2')(x)
+        
+        x = layers.Dense(64, activation='relu', name='dense_4')(x)
+        x = layers.BatchNormalization(name='batch_normalization_2')(x)
+        x = layers.Dropout(0.2, name='dropout_2')(x)
+        
+        x = layers.Dense(16, activation='relu', name='dense_5')(x)
         
         # Output: similarity score (sigmoid for 0-1 range)
         output = layers.Dense(1, activation='sigmoid', name='similarity')(x)
         
         self.model = Model(inputs=[input_1, input_2], outputs=output)
+        self._compile_model()
         
-        # Compile model
+        print("✓ Siamese network built")
+        print(f"  Input: Two embeddings of dimension {self.embedding_dim}")
+        print(f"  Output: Similarity score (0-1)")
+    
+    def _compile_model(self):
+        """Compile the Siamese model with the standard settings."""
         self.model.compile(
             optimizer=keras.optimizers.Adam(learning_rate=0.0001),
             loss='binary_crossentropy',
             metrics=['accuracy', tf.keras.metrics.Precision(), tf.keras.metrics.Recall()]
         )
-        
-        print("✓ Siamese network built")
-        print(f"  Input: Two embeddings of dimension {self.embedding_dim}")
-        print(f"  Output: Similarity score (0-1)")
     
     def train(self, pairs: List[Tuple[np.ndarray, np.ndarray]], 
               labels: np.ndarray, 
@@ -148,6 +160,19 @@ class SiameseNetwork:
     def load(self, filepath):
         """Load model from file"""
         filepath = Path(filepath)
+        print(f"Loading Siamese model from {filepath}")
+        if not filepath.exists():
+            raise FileNotFoundError(f"Siamese model not found at {filepath}")
+        
+        # Many of our legacy exports are weights-only .h5 files.
+        if filepath.suffix == ".h5":
+            if self._load_model_from_h5_archive(filepath):
+                print(f"✓ Loaded Siamese model from {filepath}")
+                return
+            if self._try_load_direct_weights(filepath):
+                print(f"✓ Loaded Siamese weights from {filepath}")
+                return
+        
         try:
             try:
                 self.model = keras.models.load_model(filepath, safe_mode=False)
@@ -175,6 +200,40 @@ class SiameseNetwork:
         finally:
             if temp_file is not None and Path(temp_file.name).exists():
                 os.unlink(temp_file.name)
+
+    def _try_load_direct_weights(self, filepath: Path) -> bool:
+        """Attempt to load Keras weights directly from an .h5 file."""
+        try:
+            print(f"→ Attempting to load Siamese weights from {filepath}")
+            with h5py.File(filepath, 'r') as f:
+                if 'model_weights' not in f:
+                    return False
+            self.model.load_weights(filepath)
+            return True
+        except Exception as exc:
+            print(f"⚠ Failed to load weights from {filepath}: {exc}")
+            return False
+
+    def _load_model_from_h5_archive(self, filepath: Path) -> bool:
+        """Rebuild a Functional model from a legacy Keras .h5 archive."""
+        try:
+            with h5py.File(filepath, 'r') as f:
+                config = f.attrs.get('model_config')
+                if config is None:
+                    return False
+                if isinstance(config, bytes):
+                    config = config.decode('utf-8')
+            loaded_model = keras.models.model_from_json(config, custom_objects={'tf': tf})
+            loaded_model.load_weights(filepath)
+            self.model = loaded_model
+            self._compile_model()
+            return True
+        except Exception as exc:
+            msg = str(exc)
+            if len(msg) > 200:
+                msg = msg[:200] + "..."
+            print(f"⚠ Failed to rebuild model from {filepath}: {msg}")
+            return False
 
     def _load_weights_from_h5(self, h5_path: Path):
         """Manual loader for weights saved in functional .keras archives."""

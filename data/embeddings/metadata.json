@@ -1,11 +1,20 @@
 {
-  "Momen Ahmed": {
-    "rank": "major",
-    "age": 32,
+  "ehab": {
+    "rank": "magor",
+    "age": 34,
     "has_permission": true,
     "num_images": 10,
     "num_embeddings": 10,
-    "added_timestamp": 1763389170.797366,
-    "directory": "/Users/moamenahmed/Desktop/AI_projects/attendance_system/data/faces/Momen Ahmed"
+    "added_timestamp": 1763464060.2033951,
+    "directory": "/Users/moamenahmed/Desktop/AI_projects/attendance_system/data/faces/ehab"
+  },
+  "abd elnaby": {
+    "rank": "captain",
+    "age": 26,
+    "has_permission": true,
+    "num_images": 10,
+    "num_embeddings": 10,
+    "added_timestamp": 1763464089.984106,
+    "directory": "/Users/moamenahmed/Desktop/AI_projects/attendance_system/data/faces/abd elnaby"
   }
 }

@@ -23,7 +23,8 @@ class FaceDetector:
         if self.method == "mtcnn":
             try:
                 from mtcnn import MTCNN
-                self.detector = MTCNN(min_face_size=self.min_face_size)
+                # mtcnn==1.0.0 does not expose min_face_size, so we filter manually
+                self.detector = MTCNN()
                 print(f"✓ MTCNN detector initialized")
             except ImportError:
                 print("⚠ MTCNN not available. Install: pip install mtcnn tensorflow")
@@ -88,6 +89,8 @@ class FaceDetector:
                 # Ensure positive dimensions
                 x, y = max(0, x), max(0, y)
                 w, h = max(1, w), max(1, h)
+                if w < self.min_face_size or h < self.min_face_size:
+                    continue
                 faces.append((x, y, w, h))
         
         return faces

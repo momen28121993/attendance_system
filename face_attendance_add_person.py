@@ -59,7 +59,11 @@ def main():
     
     face_embedder = FaceEmbedder(model_name=Config.EMBEDDING_MODEL)
     
-    dataset_manager = DatasetManager(DATASET_DIR, EMBEDDINGS_DIR)
+    dataset_manager = DatasetManager(
+        DATASET_DIR,
+        EMBEDDINGS_DIR,
+        embedding_dim=face_embedder.embedding_dim
+    )
     
     # Check if person already exists
     if name in dataset_manager.list_people():
