@@ -44,10 +44,11 @@ class AttendanceGUI:
         self.root = tk.Tk()
         self.root.title("Face Recognition Attendance System")
         self.root.geometry("1000x700")
+        self.setup_styles()
         
         # Add person fields
         self.rank_entry = None
-        self.age_entry = None
+        self.position_entry = None
         self.permission_var = tk.StringVar(value="Yes")
         self.permission_combo = None
         
@@ -62,6 +63,42 @@ class AttendanceGUI:
         
         self.setup_ui()
         self.refresh_person_list()
+    
+    def setup_styles(self):
+        """Apply a light modern theme while keeping widget dimensions unchanged."""
+        bg = "#f5f7fb"
+        primary = "#3A7AF0"
+        text = "#1f2a3d"
+        self.root.configure(bg=bg)
+        style = ttk.Style(self.root)
+        try:
+            style.theme_use("clam")
+        except tk.TclError:
+            pass
+        style.configure("TFrame", background=bg)
+        style.configure("TLabel", background=bg, foreground=text)
+        style.configure("TLabelframe", background=bg, foreground=text, padding=6)
+        style.configure("TLabelframe.Label", background=bg, foreground=text, font=("Arial", 10, "bold"))
+        style.configure(
+            "TButton",
+            background=primary,
+            foreground="white",
+            padding=(4, 3)
+        )
+        style.map(
+            "TButton",
+            background=[("active", "#2f6bd6"), ("pressed", "#285bb6")],
+            foreground=[("disabled", "#cbd3e1")]
+        )
+        style.configure(
+            "TCombobox",
+            fieldbackground="white",
+            background="white",
+            foreground=text,
+            bordercolor="#cbd3e1",
+            arrowcolor=primary
+        )
+        style.map("TCombobox", fieldbackground=[("readonly", "white")])
     
     def setup_ui(self):
         """Setup user interface"""
@@ -118,35 +155,24 @@ class AttendanceGUI:
         self.rank_entry = ttk.Entry(control_frame)
         self.rank_entry.pack(fill=tk.X, pady=5)
         
-        ttk.Label(control_frame, text="Age:").pack()
-        self.age_entry = ttk.Entry(control_frame)
-        self.age_entry.pack(fill=tk.X, pady=5)
+        ttk.Label(control_frame, text="Position:").pack()
+        self.position_entry = ttk.Entry(control_frame)
+        self.position_entry.pack(fill=tk.X, pady=5)
         
-        ttk.Label(control_frame, text="Has Permission:").pack()
+        permission_row = ttk.Frame(control_frame)
+        permission_row.pack(fill=tk.X, pady=5)
+        ttk.Label(permission_row, text="Has Permission:").pack(side=tk.LEFT, padx=(0, 6))
         self.permission_combo = ttk.Combobox(
-            control_frame,
+            permission_row,
             textvariable=self.permission_var,
             values=["Yes", "No"],
             state="readonly"
         )
-        self.permission_combo.pack(fill=tk.X, pady=5)
+        self.permission_combo.pack(side=tk.LEFT, fill=tk.X, expand=True)
         self.permission_combo.current(0)
         
         ttk.Button(control_frame, text="Add Person", 
                   command=self.add_person).pack(fill=tk.X, pady=5)
-        
-        # Settings
-        ttk.Separator(control_frame, orient='horizontal').pack(fill=tk.X, pady=10)
-        ttk.Label(control_frame, text="Settings", font=('Arial', 10, 'bold')).pack(pady=5)
-        
-        ttk.Label(control_frame, text="Threshold:").pack()
-        self.threshold_var = tk.DoubleVar(value=0.6)
-        threshold_scale = ttk.Scale(control_frame, from_=0.3, to=0.9, 
-                                   variable=self.threshold_var,
-                                   command=self.update_threshold)
-        threshold_scale.pack(fill=tk.X, pady=5)
-        self.threshold_label = ttk.Label(control_frame, text="0.60")
-        self.threshold_label.pack()
         
         # Dataset controls
         ttk.Separator(control_frame, orient='horizontal').pack(fill=tk.X, pady=10)
@@ -154,20 +180,6 @@ class AttendanceGUI:
         ttk.Label(control_frame, textvariable=self.dataset_status_var).pack(pady=2)
         ttk.Button(control_frame, text="Open Dataset Manager",
                    command=self.open_dataset_manager).pack(fill=tk.X, pady=5)
-        ttk.Label(control_frame, text="Select Person:").pack(pady=(10,0))
-        self.person_combo = ttk.Combobox(
-            control_frame,
-            textvariable=self.person_select_var,
-            state="readonly"
-        )
-        self.person_combo.pack(fill=tk.X, pady=5)
-        
-        ttk.Button(control_frame, text="Log Selected Attendance",
-                   command=self.log_selected_attendance).pack(fill=tk.X, pady=2)
-        ttk.Button(control_frame, text="Remove Selected Attendance",
-                   command=self.remove_selected_attendance).pack(fill=tk.X, pady=2)
-        ttk.Button(control_frame, text="Clear Attendance Log",
-                   command=self.clear_attendance_log).pack(fill=tk.X, pady=2)
         # Attendance
         ttk.Separator(control_frame, orient='horizontal').pack(fill=tk.X, pady=10)
         ttk.Button(control_frame, text="Show Today's Attendance", 
@@ -176,27 +188,63 @@ class AttendanceGUI:
                   command=self.show_all_attendance).pack(fill=tk.X, pady=5)
         ttk.Button(control_frame, text="Export Attendance", 
                   command=self.export_attendance).pack(fill=tk.X, pady=5)
+        
+        # Manual attendance (moved to bottom)
+        ttk.Separator(control_frame, orient='horizontal').pack(fill=tk.X, pady=10)
+        ttk.Label(control_frame, text="Manual attendance field", font=('Arial', 10, 'bold')).pack(pady=(5, 0))
+        person_select_row = ttk.Frame(control_frame)
+        person_select_row.pack(fill=tk.X, pady=(6, 0))
+        ttk.Label(person_select_row, text="Select Person:").pack(side=tk.LEFT, padx=(0, 6))
+        self.person_combo = ttk.Combobox(
+            person_select_row,
+            textvariable=self.person_select_var,
+            state="readonly"
+        )
+        self.person_combo.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
+        ttk.Button(control_frame, text="Log Selected Attendance",
+                   command=self.log_selected_attendance).pack(fill=tk.X, pady=2)
+        ttk.Button(control_frame, text="Remove Selected Attendance",
+                   command=self.remove_selected_attendance).pack(fill=tk.X, pady=2)
+        ttk.Button(control_frame, text="Clear Attendance Log",
+                   command=self.clear_attendance_log).pack(fill=tk.X, pady=2)
     
     def setup_display_panel(self, parent):
         """Setup display panel"""
         display_frame = ttk.Frame(parent)
         display_frame.grid(row=0, column=1, rowspan=2, sticky=(tk.W, tk.E, tk.N, tk.S))
         display_frame.rowconfigure(0, weight=3)
-        display_frame.rowconfigure(1, weight=1)
+        display_frame.rowconfigure(1, weight=0)
+        display_frame.rowconfigure(2, weight=1)
         display_frame.columnconfigure(0, weight=1)
         
         # Video display
         video_frame = ttk.LabelFrame(display_frame, text="Camera Feed", padding="5")
-        video_frame.grid(row=0, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 10))
+        video_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 10))
         
         self.video_label = ttk.Label(video_frame)
         self.video_label.pack(expand=True, fill=tk.BOTH)
         
+        # Threshold control placed between camera and log
+        threshold_frame = ttk.LabelFrame(display_frame, text="Threshold", padding="5")
+        threshold_frame.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
+        ttk.Label(threshold_frame, text="Adjust recognition threshold").pack(anchor=tk.W)
+        self.threshold_var = tk.DoubleVar(value=0.6)
+        threshold_scale = ttk.Scale(
+            threshold_frame,
+            from_=0.3,
+            to=0.9,
+            variable=self.threshold_var,
+            command=self.update_threshold
+        )
+        threshold_scale.pack(fill=tk.X, pady=5)
+        self.threshold_label = ttk.Label(threshold_frame, text="0.60")
+        self.threshold_label.pack(anchor=tk.E)
+        
         # Log display
         log_frame = ttk.LabelFrame(display_frame, text="System Log", padding="5")
-        log_frame.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), padx=(0, 8))
+        log_frame.grid(row=2, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), padx=(0, 8))
         
-        self.log_text = scrolledtext.ScrolledText(log_frame, height=10, wrap=tk.WORD)
+        self.log_text = scrolledtext.ScrolledText(log_frame, height=5, wrap=tk.WORD)
         self.log_text.pack(expand=True, fill=tk.BOTH)
         
         self.person_info_text = None
@@ -316,13 +364,9 @@ class AttendanceGUI:
             messagebox.showwarning("Warning", "Please enter a rank")
             return
         
-        age_text = self.age_entry.get().strip() if self.age_entry else ""
-        try:
-            age = int(age_text)
-            if age <= 0:
-                raise ValueError
-        except (ValueError, TypeError):
-            messagebox.showwarning("Warning", "Please enter a valid age")
+        position = self.position_entry.get().strip() if self.position_entry else ""
+        if not position:
+            messagebox.showwarning("Warning", "Please enter a position/role")
             return
         
         perm_value = self.permission_var.get().strip().lower()
@@ -346,7 +390,7 @@ class AttendanceGUI:
         self.root.update_idletasks()
         success = self.dataset_manager.add_person(
             name, self.face_detector, self.face_embedder,
-            rank=rank, age=age, has_permission=has_permission,
+            rank=rank, position=position, has_permission=has_permission,
             camera_id=Config.CAMERA_ID,
             num_images=Config.IMAGES_PER_PERSON,
             delay=Config.CAPTURE_DELAY
@@ -360,7 +404,7 @@ class AttendanceGUI:
             messagebox.showinfo("Success", f"Successfully added {name}")
             self.name_entry.delete(0, tk.END)
             self.rank_entry.delete(0, tk.END)
-            self.age_entry.delete(0, tk.END)
+            self.position_entry.delete(0, tk.END)
             self.permission_var.set("Yes")
             if self.permission_combo:
                 self.permission_combo.set("Yes")
@@ -554,7 +598,7 @@ class AttendanceGUI:
                 (
                     f"Name: {info.get('name','')}\n"
                     f"Rank: {info.get('rank','')}\n"
-                    f"Age: {info.get('age','N/A')}\n"
+                    f"Position: {info.get('position','N/A')}\n"
                     f"Has Permission: {permission_text}\n"
                     f"Images: {info.get('num_images','N/A')}\n"
                     f"Embeddings: {info.get('num_embeddings','N/A')}\n"
@@ -570,7 +614,7 @@ class AttendanceGUI:
         message = (
             f"Name: {info.get('name','')}\n"
             f"Rank: {info.get('rank','')}\n"
-            f"Age: {info.get('age','N/A')}\n"
+            f"Position: {info.get('position','N/A')}\n"
             f"Has Permission: {permission_text}\n"
         )
         return message

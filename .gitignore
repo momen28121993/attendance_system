@@ -13,3 +13,8 @@ venv/
 # Data & logs (uncomment if you don't want to commit datasets/logs)
 # data/
 # logs/
+
+# Large model artifacts (kept locally; avoid pushing >100MB files)
+buffalo_model/buffalo_l.zip
+buffalo_model/w600k_r50.onnx
+buffalo_model/1k3d68.onnx

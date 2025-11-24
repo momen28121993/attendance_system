@@ -1,22 +1,4 @@
 {
-  "mohamed ehab": {
-    "rank": "major",
-    "age": 34,
-    "has_permission": true,
-    "num_images": 240,
-    "num_embeddings": 240,
-    "added_timestamp": 1763546474.843055,
-    "directory": "/Users/moamenahmed/Desktop/AI_projects/attendance_system/data/faces/mohamed ehab"
-  },
-  "\u0645\u0635\u0637\u0641\u064a \u062d\u0644\u0645\u064a": {
-    "rank": "\u0645\u0644\u0627\u0632\u0645 \u0627\u0648\u0644",
-    "age": 25,
-    "has_permission": true,
-    "num_images": 240,
-    "num_embeddings": 240,
-    "added_timestamp": 1763546830.237846,
-    "directory": "/Users/moamenahmed/Desktop/AI_projects/attendance_system/data/faces/\u0645\u0635\u0637\u0641\u064a \u062d\u0644\u0645\u064a"
-  },
   "momen": {
     "rank": "ra2ed",
     "age": 32,
@@ -34,5 +16,14 @@
     "num_embeddings": 120,
     "added_timestamp": 1763549127.5444632,
     "directory": "/Users/moamenahmed/Desktop/AI_projects/attendance_system/data/faces/momen ahmed"
+  },
+  "Mohamed Ehab": {
+    "rank": "Major",
+    "position": "Battery commander",
+    "has_permission": true,
+    "num_images": 120,
+    "num_embeddings": 120,
+    "added_timestamp": 1763646918.4591277,
+    "directory": "E:\\mohamed\\projects\\attendance_system-main\\data\\faces\\Mohamed Ehab"
   }
 }

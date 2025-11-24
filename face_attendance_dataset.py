@@ -48,7 +48,7 @@ class DatasetManager:
         self.metadata = self.load_metadata()
     
     def add_person(self, name: str, face_detector, face_embedder,
-                   rank: str, age: int, has_permission: bool,
+                   rank: str, position: str, has_permission: bool,
                    camera_id=0, num_images=10, delay=0.5) -> bool:
         """
         Add a new person to the dataset by capturing faces from camera
@@ -57,7 +57,7 @@ class DatasetManager:
             face_detector: FaceDetector instance
             face_embedder: FaceEmbedder instance
             rank: Person's rank/role
-            age: Person's age
+            position: Person's position/role (text)
             has_permission: Whether person has access permission
             camera_id: Camera device ID
             num_images: Number of images to capture
@@ -164,7 +164,7 @@ class DatasetManager:
             self.embeddings_cache[name] = existing
             self.metadata[name] = {
                 'rank': rank,
-                'age': age,
+                'position': position,
                 'has_permission': has_permission,
                 'num_images': images_saved,
                 'num_embeddings': len(existing),
@@ -408,9 +408,11 @@ class DatasetManager:
             existing_meta = self.metadata.get(name, {})
             preserved_meta = {
                 key: existing_meta.get(key)
-                for key in ['rank', 'age', 'has_permission', 'added_timestamp', 'directory', 'num_images']
+                for key in ['rank', 'position', 'has_permission', 'added_timestamp', 'directory', 'num_images']
                 if key in existing_meta
             }
+            if 'position' not in preserved_meta and 'age' in existing_meta:
+                preserved_meta['position'] = existing_meta.get('age')
             person_dir = self.dataset_dir / name
             preserved_meta.setdefault('directory', str(person_dir))
             preserved_meta['num_embeddings'] = len(embeddings)
@@ -479,10 +481,12 @@ class DatasetManager:
             image_count = len(list(person_dir.glob("*.jpg"))) + len(list(person_dir.glob("*.png")))
         
         meta = self.metadata.get(name, {})
+        # Support legacy 'age' field if present
+        position = meta.get('position') or meta.get('age')
         info = {
             'name': name,
             'rank': meta.get('rank', ''),
-            'age': meta.get('age'),
+            'position': position,
             'has_permission': meta.get('has_permission'),
             'num_embeddings': len(embeddings),
             'num_images': meta.get('num_images', image_count),
