@@ -27,7 +27,7 @@ class Config:
     # Face detection
     FACE_DETECTION_METHOD = "mtcnn"  # Options: retinaface, mtcnn, opencv, mediapipe
     MIN_FACE_SIZE = 40
-    DETECTION_CONFIDENCE = 0.9
+    DETECTION_CONFIDENCE = 0.9 
     
     # Embedding model
     EMBEDDING_MODEL = str(Path.home() / ".insightface/models/buffalo_l/w600k_r50.onnx")
