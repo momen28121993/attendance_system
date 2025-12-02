@@ -6,12 +6,18 @@ Simple interface for face recognition attendance system
 import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext
 import threading
+import time
+import platform
 from datetime import datetime
 from typing import Optional, Dict, List
+from pathlib import Path
 import cv2
 from PIL import Image, ImageTk
 
 from face_attendance_main import Config
+
+# Optional custom alarm path (Windows WAV). Replace the string below if you want a different file.
+ALARM_SOUND_PATH = r"E:\mohamed\projects\attendance_system-main\alarm.wav"
 
 class AttendanceGUI:
     """GUI for Face Recognition Attendance System"""
@@ -39,15 +45,24 @@ class AttendanceGUI:
         self.last_output_frame = None
         self.processing_frame = False
         self.pending_frame = None
+        # Simple single-person tracker state
+        self.tracker = None
+        self.tracked_name: Optional[str] = None
+        self.tracked_last_seen = 0.0
+        self.tracking_grace_seconds = 1.0  # how long we tolerate lost tracking
+        self.required_known_duration = 2.0  # seconds a person must stay verified before tracking
+        self._tracking_candidate_name: Optional[str] = None
+        self._tracking_candidate_since = 0.0
         
         # Create main window
         self.root = tk.Tk()
         self.root.title("Face Recognition Attendance System")
         self.root.geometry("1000x700")
+        self.setup_styles()
         
         # Add person fields
         self.rank_entry = None
-        self.age_entry = None
+        self.position_entry = None
         self.permission_var = tk.StringVar(value="Yes")
         self.permission_combo = None
         
@@ -59,9 +74,55 @@ class AttendanceGUI:
         self.person_info_text = None
         self.person_select_var = tk.StringVar()
         self._last_displayed_infos: Optional[List[str]] = None
+        self.last_alarm_time = 0.0
+        self.alarm_cooldown = 5.0  # seconds between alarm sounds
+        default_alarm = Path(__file__).parent / "alarm.wav"
+        custom_alarm = Path(ALARM_SOUND_PATH) if ALARM_SOUND_PATH else None
+        self.alarm_sound_path: Optional[str] = None
+        for candidate in (custom_alarm, default_alarm):
+            if candidate and candidate.exists():
+                self.alarm_sound_path = str(candidate)
+                break
+        self._alarm_lock = threading.Lock()
         
         self.setup_ui()
         self.refresh_person_list()
+    
+    def setup_styles(self):
+        """Apply a light modern theme while keeping widget dimensions unchanged."""
+        bg = "#f5f7fb"
+        primary = "#3A7AF0"
+        text = "#1f2a3d"
+        self.root.configure(bg=bg)
+        style = ttk.Style(self.root)
+        try:
+            style.theme_use("clam")
+        except tk.TclError:
+            pass
+        style.configure("TFrame", background=bg)
+        style.configure("TLabel", background=bg, foreground=text)
+        style.configure("TLabelframe", background=bg, foreground=text, padding=6)
+        style.configure("TLabelframe.Label", background=bg, foreground=text, font=("Arial", 10, "bold"))
+        style.configure(
+            "TButton",
+            background=primary,
+            foreground="white",
+            padding=(4, 3)
+        )
+        style.map(
+            "TButton",
+            background=[("active", "#2f6bd6"), ("pressed", "#285bb6")],
+            foreground=[("disabled", "#cbd3e1")]
+        )
+        style.configure(
+            "TCombobox",
+            fieldbackground="white",
+            background="white",
+            foreground=text,
+            bordercolor="#cbd3e1",
+            arrowcolor=primary
+        )
+        style.map("TCombobox", fieldbackground=[("readonly", "white")])
     
     def setup_ui(self):
         """Setup user interface"""
@@ -118,35 +179,24 @@ class AttendanceGUI:
         self.rank_entry = ttk.Entry(control_frame)
         self.rank_entry.pack(fill=tk.X, pady=5)
         
-        ttk.Label(control_frame, text="Age:").pack()
-        self.age_entry = ttk.Entry(control_frame)
-        self.age_entry.pack(fill=tk.X, pady=5)
+        ttk.Label(control_frame, text="Position:").pack()
+        self.position_entry = ttk.Entry(control_frame)
+        self.position_entry.pack(fill=tk.X, pady=5)
         
-        ttk.Label(control_frame, text="Has Permission:").pack()
+        permission_row = ttk.Frame(control_frame)
+        permission_row.pack(fill=tk.X, pady=5)
+        ttk.Label(permission_row, text="Has Permission:").pack(side=tk.LEFT, padx=(0, 6))
         self.permission_combo = ttk.Combobox(
-            control_frame,
+            permission_row,
             textvariable=self.permission_var,
             values=["Yes", "No"],
             state="readonly"
         )
-        self.permission_combo.pack(fill=tk.X, pady=5)
+        self.permission_combo.pack(side=tk.LEFT, fill=tk.X, expand=True)
         self.permission_combo.current(0)
         
         ttk.Button(control_frame, text="Add Person", 
                   command=self.add_person).pack(fill=tk.X, pady=5)
-        
-        # Settings
-        ttk.Separator(control_frame, orient='horizontal').pack(fill=tk.X, pady=10)
-        ttk.Label(control_frame, text="Settings", font=('Arial', 10, 'bold')).pack(pady=5)
-        
-        ttk.Label(control_frame, text="Threshold:").pack()
-        self.threshold_var = tk.DoubleVar(value=0.6)
-        threshold_scale = ttk.Scale(control_frame, from_=0.3, to=0.9, 
-                                   variable=self.threshold_var,
-                                   command=self.update_threshold)
-        threshold_scale.pack(fill=tk.X, pady=5)
-        self.threshold_label = ttk.Label(control_frame, text="0.60")
-        self.threshold_label.pack()
         
         # Dataset controls
         ttk.Separator(control_frame, orient='horizontal').pack(fill=tk.X, pady=10)
@@ -154,20 +204,6 @@ class AttendanceGUI:
         ttk.Label(control_frame, textvariable=self.dataset_status_var).pack(pady=2)
         ttk.Button(control_frame, text="Open Dataset Manager",
                    command=self.open_dataset_manager).pack(fill=tk.X, pady=5)
-        ttk.Label(control_frame, text="Select Person:").pack(pady=(10,0))
-        self.person_combo = ttk.Combobox(
-            control_frame,
-            textvariable=self.person_select_var,
-            state="readonly"
-        )
-        self.person_combo.pack(fill=tk.X, pady=5)
-        
-        ttk.Button(control_frame, text="Log Selected Attendance",
-                   command=self.log_selected_attendance).pack(fill=tk.X, pady=2)
-        ttk.Button(control_frame, text="Remove Selected Attendance",
-                   command=self.remove_selected_attendance).pack(fill=tk.X, pady=2)
-        ttk.Button(control_frame, text="Clear Attendance Log",
-                   command=self.clear_attendance_log).pack(fill=tk.X, pady=2)
         # Attendance
         ttk.Separator(control_frame, orient='horizontal').pack(fill=tk.X, pady=10)
         ttk.Button(control_frame, text="Show Today's Attendance", 
@@ -176,27 +212,63 @@ class AttendanceGUI:
                   command=self.show_all_attendance).pack(fill=tk.X, pady=5)
         ttk.Button(control_frame, text="Export Attendance", 
                   command=self.export_attendance).pack(fill=tk.X, pady=5)
+        
+        # Manual attendance (moved to bottom)
+        ttk.Separator(control_frame, orient='horizontal').pack(fill=tk.X, pady=10)
+        ttk.Label(control_frame, text="Manual attendance field", font=('Arial', 10, 'bold')).pack(pady=(5, 0))
+        person_select_row = ttk.Frame(control_frame)
+        person_select_row.pack(fill=tk.X, pady=(6, 0))
+        ttk.Label(person_select_row, text="Select Person:").pack(side=tk.LEFT, padx=(0, 6))
+        self.person_combo = ttk.Combobox(
+            person_select_row,
+            textvariable=self.person_select_var,
+            state="readonly"
+        )
+        self.person_combo.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
+        ttk.Button(control_frame, text="Log Selected Attendance",
+                   command=self.log_selected_attendance).pack(fill=tk.X, pady=2)
+        ttk.Button(control_frame, text="Remove Selected Attendance",
+                   command=self.remove_selected_attendance).pack(fill=tk.X, pady=2)
+        ttk.Button(control_frame, text="Clear Attendance Log",
+                   command=self.clear_attendance_log).pack(fill=tk.X, pady=2)
     
     def setup_display_panel(self, parent):
         """Setup display panel"""
         display_frame = ttk.Frame(parent)
         display_frame.grid(row=0, column=1, rowspan=2, sticky=(tk.W, tk.E, tk.N, tk.S))
         display_frame.rowconfigure(0, weight=3)
-        display_frame.rowconfigure(1, weight=1)
+        display_frame.rowconfigure(1, weight=0)
+        display_frame.rowconfigure(2, weight=1)
         display_frame.columnconfigure(0, weight=1)
         
         # Video display
         video_frame = ttk.LabelFrame(display_frame, text="Camera Feed", padding="5")
-        video_frame.grid(row=0, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 10))
+        video_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 10))
         
         self.video_label = ttk.Label(video_frame)
         self.video_label.pack(expand=True, fill=tk.BOTH)
         
+        # Threshold control placed between camera and log
+        threshold_frame = ttk.LabelFrame(display_frame, text="Threshold", padding="5")
+        threshold_frame.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
+        ttk.Label(threshold_frame, text="Adjust recognition threshold").pack(anchor=tk.W)
+        self.threshold_var = tk.DoubleVar(value=0.6)
+        threshold_scale = ttk.Scale(
+            threshold_frame,
+            from_=0.3,
+            to=0.9,
+            variable=self.threshold_var,
+            command=self.update_threshold
+        )
+        threshold_scale.pack(fill=tk.X, pady=5)
+        self.threshold_label = ttk.Label(threshold_frame, text="0.60")
+        self.threshold_label.pack(anchor=tk.E)
+        
         # Log display
         log_frame = ttk.LabelFrame(display_frame, text="System Log", padding="5")
-        log_frame.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), padx=(0, 8))
+        log_frame.grid(row=2, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), padx=(0, 8))
         
-        self.log_text = scrolledtext.ScrolledText(log_frame, height=10, wrap=tk.WORD)
+        self.log_text = scrolledtext.ScrolledText(log_frame, height=5, wrap=tk.WORD)
         self.log_text.pack(expand=True, fill=tk.BOTH)
         
         self.person_info_text = None
@@ -206,6 +278,100 @@ class AttendanceGUI:
         timestamp = datetime.now().strftime("%H:%M:%S")
         self.log_text.insert(tk.END, f"[{timestamp}] {message}\n")
         self.log_text.see(tk.END)
+
+    def _trigger_alarm(self):
+        """Play an alarm sound when an unauthorized person is seen."""
+        now = time.time()
+        with self._alarm_lock:
+            if now - self.last_alarm_time < self.alarm_cooldown:
+                return
+            self.last_alarm_time = now
+        threading.Thread(target=self._play_alarm_sound, daemon=True).start()
+
+    def _play_alarm_sound(self):
+        """
+        Non-blocking alarm sound with a safe fallback.
+        If a WAV file path is set (Windows), it will be played; otherwise, a simple beep is used.
+        """
+        try:
+            if platform.system() == "Windows":
+                import winsound
+                if self.alarm_sound_path:
+                    winsound.PlaySound(self.alarm_sound_path, winsound.SND_FILENAME | winsound.SND_ASYNC)
+                else:
+                    pattern = [(900, 250), (1200, 350), (900, 250)]
+                    for freq, dur in pattern:
+                        winsound.Beep(freq, dur)
+            else:
+                print("\a", end="", flush=True)
+        except Exception as exc:
+            self.root.after(0, lambda: self.log(f"Alarm sound failed: {exc}"))
+
+    def _create_tracker(self):
+        """Try to create an OpenCV tracker (handles legacy namespace)."""
+        candidates = [
+            ("legacy", "TrackerCSRT_create"),
+            ("", "TrackerCSRT_create"),
+            ("legacy", "TrackerKCF_create"),
+            ("", "TrackerKCF_create"),
+        ]
+        for namespace, name in candidates:
+            parent = getattr(cv2, namespace, cv2) if namespace else cv2
+            creator = getattr(parent, name, None)
+            if creator:
+                try:
+                    return creator()
+                except Exception:
+                    continue
+        return None
+
+    def _start_tracking(self, frame, bbox, name):
+        """Initialize tracking for a verified person after the hold duration."""
+        tracker = self._create_tracker()
+        if not tracker:
+            self.log("Tracking unavailable: no supported OpenCV tracker found.")
+            return
+        ok = tracker.init(frame, tuple(map(float, bbox)))
+        if not ok:
+            self.log("Failed to initialize tracker.")
+            return
+        self.tracker = tracker
+        self.tracked_name = name
+        self.tracked_last_seen = time.time()
+        self._tracking_candidate_name = None
+        self._tracking_candidate_since = 0.0
+        self.log(f"Tracking locked on {name} (hold {self.required_known_duration:.1f}s reached)")
+
+    def _clear_tracking(self):
+        """Reset tracking state when the person leaves or tracking is lost."""
+        self.tracker = None
+        self.tracked_name = None
+        self.tracked_last_seen = 0.0
+        self._tracking_candidate_name = None
+        self._tracking_candidate_since = 0.0
+
+    def _result_has_permission(self, result: Dict) -> bool:
+        """Return True only for people with permission explicitly set to Yes."""
+        info = result.get('info')
+        if not info and result.get('name'):
+            info = self.dataset_manager.get_person_info(result['name'])
+        return bool(info and info.get('has_permission') is True)
+
+    @staticmethod
+    def _bbox_iou(box_a, box_b) -> float:
+        """Intersection over Union for (x, y, w, h) boxes."""
+        ax, ay, aw, ah = box_a
+        bx, by, bw, bh = box_b
+        a_x2, a_y2 = ax + aw, ay + ah
+        b_x2, b_y2 = bx + bw, by + bh
+        inter_x1, inter_y1 = max(ax, bx), max(ay, by)
+        inter_x2, inter_y2 = min(a_x2, b_x2), min(a_y2, b_y2)
+        inter_w, inter_h = max(0, inter_x2 - inter_x1), max(0, inter_y2 - inter_y1)
+        inter_area = inter_w * inter_h
+        area_a = aw * ah
+        area_b = bw * bh
+        union = area_a + area_b - inter_area
+        return inter_area / union if union > 0 else 0.0
     
     def update_live_person_info(self, infos: Optional[List[Dict]]):
         """Details pane removed."""
@@ -240,6 +406,7 @@ class AttendanceGUI:
         """Stop camera feed"""
         self.camera_running = False
         self.processing_frame = False
+        self._clear_tracking()
         if self.cap:
             self.cap.release()
             self.cap = None
@@ -274,9 +441,61 @@ class AttendanceGUI:
     def _process_frame(self, frame):
         """Recognize faces in a background thread"""
         try:
+            now = time.time()
+            tracking_box = None
+
+            if self.tracker and self.tracked_name:
+                ok, bbox = self.tracker.update(frame)
+                if ok:
+                    self.tracked_last_seen = now
+                    tracking_box = bbox
+                elif now - self.tracked_last_seen > self.tracking_grace_seconds:
+                    self._clear_tracking()
+
             results = self.face_recognizer.recognize_from_frame(frame)
+            tracked_detection = None
+            if self.tracked_name:
+                tracked_detection = next((r for r in results if r.get('name') == self.tracked_name), None)
+
+            if not self.tracked_name:
+                candidate = next(
+                    (r for r in results if r['verified'] and self._result_has_permission(r)),
+                    None
+                )
+                if candidate:
+                    if self._tracking_candidate_name == candidate['name']:
+                        if now - self._tracking_candidate_since >= self.required_known_duration:
+                            self._start_tracking(frame, candidate['bbox'], candidate['name'])
+                            tracking_box = candidate['bbox']
+                    else:
+                        self._tracking_candidate_name = candidate['name']
+                        self._tracking_candidate_since = now
+                else:
+                    self._tracking_candidate_name = None
+                    self._tracking_candidate_since = 0.0
+            else:
+                # If we lost the tracker but still detect the person, re-anchor; if drifted, snap back.
+                if tracked_detection:
+                    det_box = tracked_detection['bbox']
+                    if tracking_box:
+                        iou = self._bbox_iou(tracking_box, det_box)
+                        if iou < 0.1:
+                            self._start_tracking(frame, det_box, self.tracked_name)
+                            tracking_box = det_box
+                    else:
+                        self._start_tracking(frame, det_box, self.tracked_name)
+                        tracking_box = det_box
+                elif now - self.tracked_last_seen > self.tracking_grace_seconds:
+                    self._clear_tracking()
+
+            filtered_results = [
+                r for r in results
+                if not (self.tracked_name and r.get('name') == self.tracked_name)
+            ]
+
             log_messages = []
-            for result in results:
+            unauthorized_detected = False
+            for result in filtered_results:
                 if result['verified']:
                     success = self.attendance_logger.log_attendance(
                         result['name'],
@@ -286,22 +505,86 @@ class AttendanceGUI:
                     if success:
                         log_messages.append(f"✓ {result['name']} - Attendance logged")
             detected_infos = []
-            for result in results:
+            for result in filtered_results:
                 if result['verified']:
                     info = result.get('info')
                     if not info and result['name']:
                         info = self.dataset_manager.get_person_info(result['name'])
                     if info:
                         detected_infos.append(info)
-            self.root.after(0, lambda infos=detected_infos, msgs=log_messages: self._apply_recognition_updates(infos, msgs))
-            output_frame = self.face_recognizer.draw_results(frame, results)
+                        if info.get('has_permission') is False:
+                            unauthorized_detected = True
+            if unauthorized_detected:
+                self._trigger_alarm()
+            self.root.after(
+                0,
+                lambda infos=detected_infos, msgs=log_messages, alert=unauthorized_detected:
+                    self._apply_recognition_updates(infos, msgs, alert)
+            )
+            output_frame = self.face_recognizer.draw_results(frame, filtered_results)
+            if tracking_box and self.tracked_name:
+                x, y, w, h = [int(v) for v in tracking_box]
+                info = self.dataset_manager.get_person_info(self.tracked_name) or {}
+                color = (0, 255, 0)  # green
+                label = f"{self.tracked_name}"
+                rank = info.get('rank') or "N/A"
+                position = info.get('position') or "N/A"
+                perm_str = "Yes" if info.get('has_permission') else "No"
+                extra_text_lines = [
+                    f"{label} | Rank: {rank}",
+                    f"Position: {position}",
+                    f"Perm: {perm_str}",
+                ]
+                cv2.rectangle(output_frame, (x, y), (x + w, y + h), color, 2)
+                label_size, _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
+                top_y = max(0, y - 25)
+                cv2.rectangle(output_frame, (x, top_y), (x + label_size[0], y), color, -1)
+                cv2.putText(
+                    output_frame,
+                    label,
+                    (x, y - 8 if y - 8 > 0 else y + 15),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.6,
+                    (0, 0, 0),
+                    2
+                )
+                if extra_text_lines:
+                    text_y = y + h + 25
+                    font = cv2.FONT_HERSHEY_SIMPLEX
+                    font_scale = 0.5
+                    thickness = 1
+                    sizes = [cv2.getTextSize(line, font, font_scale, thickness)[0] for line in extra_text_lines]
+                    max_width = max(w for w, _ in sizes)
+                    line_height = max(hh for _, hh in sizes) + 4
+                    box_height = line_height * len(extra_text_lines) + 6
+                    cv2.rectangle(
+                        output_frame,
+                        (x, text_y - box_height),
+                        (x + max_width + 10, text_y),
+                        color,
+                        -1
+                    )
+                    current_y = text_y - box_height + line_height
+                    for line in extra_text_lines:
+                        cv2.putText(
+                            output_frame,
+                            line,
+                            (x + 5, current_y - 2),
+                            font,
+                            font_scale,
+                            (0, 0, 0),
+                            thickness
+                        )
+                        current_y += line_height
             self.last_output_frame = output_frame
         finally:
             self.processing_frame = False
 
-    def _apply_recognition_updates(self, infos, log_messages):
+    def _apply_recognition_updates(self, infos, log_messages, unauthorized=False):
         for msg in log_messages:
             self.log(msg)
+        if unauthorized:
+            self.log("ALERT: Person detected without permission")
         self.update_live_person_info(infos)
     
     def add_person(self):
@@ -316,13 +599,9 @@ class AttendanceGUI:
             messagebox.showwarning("Warning", "Please enter a rank")
             return
         
-        age_text = self.age_entry.get().strip() if self.age_entry else ""
-        try:
-            age = int(age_text)
-            if age <= 0:
-                raise ValueError
-        except (ValueError, TypeError):
-            messagebox.showwarning("Warning", "Please enter a valid age")
+        position = self.position_entry.get().strip() if self.position_entry else ""
+        if not position:
+            messagebox.showwarning("Warning", "Please enter a position/role")
             return
         
         perm_value = self.permission_var.get().strip().lower()
@@ -346,7 +625,7 @@ class AttendanceGUI:
         self.root.update_idletasks()
         success = self.dataset_manager.add_person(
             name, self.face_detector, self.face_embedder,
-            rank=rank, age=age, has_permission=has_permission,
+            rank=rank, position=position, has_permission=has_permission,
             camera_id=Config.CAMERA_ID,
             num_images=Config.IMAGES_PER_PERSON,
             delay=Config.CAPTURE_DELAY
@@ -360,7 +639,7 @@ class AttendanceGUI:
             messagebox.showinfo("Success", f"Successfully added {name}")
             self.name_entry.delete(0, tk.END)
             self.rank_entry.delete(0, tk.END)
-            self.age_entry.delete(0, tk.END)
+            self.position_entry.delete(0, tk.END)
             self.permission_var.set("Yes")
             if self.permission_combo:
                 self.permission_combo.set("Yes")
@@ -554,7 +833,7 @@ class AttendanceGUI:
                 (
                     f"Name: {info.get('name','')}\n"
                     f"Rank: {info.get('rank','')}\n"
-                    f"Age: {info.get('age','N/A')}\n"
+                    f"Position: {info.get('position','N/A')}\n"
                     f"Has Permission: {permission_text}\n"
                     f"Images: {info.get('num_images','N/A')}\n"
                     f"Embeddings: {info.get('num_embeddings','N/A')}\n"
@@ -570,7 +849,7 @@ class AttendanceGUI:
         message = (
             f"Name: {info.get('name','')}\n"
             f"Rank: {info.get('rank','')}\n"
-            f"Age: {info.get('age','N/A')}\n"
+            f"Position: {info.get('position','N/A')}\n"
             f"Has Permission: {permission_text}\n"
         )
         return message
