@@ -447,7 +447,6 @@ class AttendanceGUI:
             if self.tracker and self.tracked_name:
                 ok, bbox = self.tracker.update(frame)
                 if ok:
-                    self.tracked_last_seen = now
                     tracking_box = bbox
                 elif now - self.tracked_last_seen > self.tracking_grace_seconds:
                     self._clear_tracking()
@@ -477,6 +476,7 @@ class AttendanceGUI:
                 # If we lost the tracker but still detect the person, re-anchor; if drifted, snap back.
                 if tracked_detection:
                     det_box = tracked_detection['bbox']
+                    self.tracked_last_seen = now
                     if tracking_box:
                         iou = self._bbox_iou(tracking_box, det_box)
                         if iou < 0.1:
@@ -525,13 +525,13 @@ class AttendanceGUI:
             if tracking_box and self.tracked_name:
                 x, y, w, h = [int(v) for v in tracking_box]
                 info = self.dataset_manager.get_person_info(self.tracked_name) or {}
-                color = (0, 255, 0)  # green
+                color = (0, 255, 0) if info.get('has_permission') else (0, 0, 255)  # green for Yes, red otherwise
                 label = f"{self.tracked_name}"
                 rank = info.get('rank') or "N/A"
                 position = info.get('position') or "N/A"
                 perm_str = "Yes" if info.get('has_permission') else "No"
                 extra_text_lines = [
-                    f"{label} | Rank: {rank}",
+                    f"Rank: {rank}",
                     f"Position: {position}",
                     f"Perm: {perm_str}",
                 ]
@@ -549,7 +549,6 @@ class AttendanceGUI:
                     2
                 )
                 if extra_text_lines:
-                    text_y = y + h + 25
                     font = cv2.FONT_HERSHEY_SIMPLEX
                     font_scale = 0.5
                     thickness = 1
@@ -557,6 +556,7 @@ class AttendanceGUI:
                     max_width = max(w for w, _ in sizes)
                     line_height = max(hh for _, hh in sizes) + 4
                     box_height = line_height * len(extra_text_lines) + 6
+                    text_y = y + h + box_height
                     cv2.rectangle(
                         output_frame,
                         (x, text_y - box_height),

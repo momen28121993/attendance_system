@@ -143,10 +143,7 @@ class FaceRecognizer:
             has_perm = details.get('has_permission')
             if verified:
                 label = f"{name} ({similarity:.2f})"
-                if has_perm:
-                    color = (0, 200, 0)  # green
-                else:
-                    color = (0, 165, 255)  # orange
+                color = (0, 255, 0) if has_perm else (0, 0, 255)  # green for Yes, red for No
                 extra_lines = []
                 if details:
                     if details.get('rank'):
@@ -155,11 +152,10 @@ class FaceRecognizer:
                         extra_lines.append(f"Position: {details.get('position')}")
                     perm_str = "Yes" if has_perm else "No"
                     extra_lines.append(f"Perm: {perm_str}")
-                extra_text = " | ".join(extra_lines)
             else:
-                color = (0, 165, 255)  # orange for unknown
+                color = (0, 255, 255)  # yellow for unknown
                 label = f"Unknown ({similarity:.2f})"
-                extra_text = ""
+                extra_lines = []
             
             # Draw rectangle
             cv2.rectangle(output, (x, y), (x+w, y+h), color, 2)
@@ -170,15 +166,23 @@ class FaceRecognizer:
             
             # Draw label text
             cv2.putText(output, label, (x, y-8),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
             
-            if extra_text:
-                text_size, _ = cv2.getTextSize(extra_text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
-                text_y = y + h + 25
-                cv2.rectangle(output, (x, text_y - text_size[1] - 10),
-                              (x + text_size[0] + 10, text_y), color, -1)
-                cv2.putText(output, extra_text, (x + 5, text_y - 5),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+            if extra_lines:
+                font = cv2.FONT_HERSHEY_SIMPLEX
+                font_scale = 0.5
+                thickness = 1
+                sizes = [cv2.getTextSize(line, font, font_scale, thickness)[0] for line in extra_lines]
+                max_width = max(w for w, _ in sizes)
+                line_height = max(hh for _, hh in sizes) + 4
+                box_height = line_height * len(extra_lines) + 6
+                text_y = y + h + box_height
+                cv2.rectangle(output, (x, text_y - box_height), (x + max_width + 10, text_y), color, -1)
+                current_y = text_y - box_height + line_height
+                for line in extra_lines:
+                    cv2.putText(output, line, (x + 5, current_y - 2),
+                                font, font_scale, (0, 0, 0), thickness)
+                    current_y += line_height
         
         return output
     
