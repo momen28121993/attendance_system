@@ -151,8 +151,8 @@ class FaceRecognizer:
                 if details:
                     if details.get('rank'):
                         extra_lines.append(f"Rank: {details.get('rank')}")
-                    if details.get('age') is not None:
-                        extra_lines.append(f"Age: {details.get('age')}")
+                    if details.get('position'):
+                        extra_lines.append(f"Position: {details.get('position')}")
                     perm_str = "Yes" if has_perm else "No"
                     extra_lines.append(f"Perm: {perm_str}")
                 extra_text = " | ".join(extra_lines)
