@@ -476,7 +476,7 @@ class SilentFaceAntiSpoof:
     def __init__(
         self,
         model_dir: Path,
-        threshold: float = 0.8,
+        threshold: float = 0.6,
         device: Optional[str] = None,
         download_url: str = DEFAULT_MODEL_URL,
     ):
@@ -554,8 +554,15 @@ class SilentFaceAntiSpoof:
             probs = torch.softmax(logits, dim=1)[0].detach().cpu().numpy()
 
         real_prob = float(probs[1]) if probs.shape[0] > 1 else float(probs[0])
-        spoof_prob = float(np.sum(probs) - real_prob)
-        is_real = real_prob >= self.threshold
+        if probs.shape[0] > 1:
+            other = np.delete(probs, 1)
+            spoof_prob = float(np.max(other))
+        else:
+            spoof_prob = float(1.0 - real_prob)
+
+        # Require a margin over spoof prob; fail closed only on confident spoof
+        margin = real_prob - spoof_prob
+        is_real = (real_prob >= self.threshold and margin >= -0.05) or margin >= 0.1
 
         return {
             "is_real": is_real,
