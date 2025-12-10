@@ -489,6 +489,7 @@ class SilentFaceAntiSpoof:
         self.conv6_kernel = get_kernel(80, 80)
         self._lock = threading.Lock()
         self._load_error_reported = False
+        self.disabled = False
 
     def _ensure_model_file(self):
         if self.model_path.exists():
@@ -515,6 +516,9 @@ class SilentFaceAntiSpoof:
         """
         Returns dict with liveness info or None if something went wrong.
         """
+        if self.disabled:
+            return None
+
         with self._lock:
             try:
                 self._load_model()
@@ -522,6 +526,8 @@ class SilentFaceAntiSpoof:
                 if not self._load_error_reported:
                     print(f"⚠ SilentFace model load failed: {exc}")
                     self._load_error_reported = True
+                # Permanently disable to avoid blocking recognition
+                self.disabled = True
                 return None
 
         x, y, w, h = bbox

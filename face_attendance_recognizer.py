@@ -116,7 +116,8 @@ class FaceRecognizer:
                 except Exception as exc:  # pylint: disable=broad-except
                     print(f"⚠ Anti-spoof check failed: {exc}")
                     prediction = None
-                liveness = prediction or {"is_real": False, "real_prob": None, "spoof_prob": None}
+                # If anti-spoofing is disabled/unavailable, do not block recognition
+                liveness = prediction or {"is_real": True, "real_prob": None, "spoof_prob": None}
 
             is_real = liveness.get("is_real", True)
 
