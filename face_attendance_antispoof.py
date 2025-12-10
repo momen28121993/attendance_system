@@ -476,7 +476,7 @@ class SilentFaceAntiSpoof:
     def __init__(
         self,
         model_dir: Path,
-        threshold: float = 0.6,
+        threshold: float = 0.5,
         device: Optional[str] = None,
         download_url: str = DEFAULT_MODEL_URL,
     ):
@@ -541,7 +541,8 @@ class SilentFaceAntiSpoof:
             return None
 
         try:
-            resized = cv2.resize(crop, (80, 80))
+            rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
+            resized = cv2.resize(rgb, (80, 80))
         except Exception:
             return None
 
@@ -562,7 +563,7 @@ class SilentFaceAntiSpoof:
 
         # Require a margin over spoof prob; fail closed only on confident spoof
         margin = real_prob - spoof_prob
-        is_real = (real_prob >= self.threshold and margin >= -0.05) or margin >= 0.1
+        is_real = (real_prob >= self.threshold and margin >= -0.1) or margin >= 0.15 or real_prob >= 0.55
 
         return {
             "is_real": is_real,
