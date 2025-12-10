@@ -60,6 +60,10 @@ class AttendanceGUI:
         self.person_info_text = None
         self.person_select_var = tk.StringVar()
         self._last_displayed_infos: Optional[List[str]] = None
+        self.edit_rank_var = tk.StringVar()
+        self.edit_position_var = tk.StringVar()
+        self.edit_permission_var = tk.StringVar(value="Yes")
+        self.edit_permission_combo = None
         
         self.setup_ui()
         self.refresh_person_list()
@@ -493,7 +497,7 @@ class AttendanceGUI:
         
         self.dataset_window = tk.Toplevel(self.root)
         self.dataset_window.title("Dataset Manager")
-        self.dataset_window.geometry("450x520")
+        self.dataset_window.geometry("520x720")
         self.dataset_window.protocol("WM_DELETE_WINDOW", self.close_dataset_manager)
         self.dataset_window.transient(self.root)
         
@@ -508,7 +512,7 @@ class AttendanceGUI:
         
         scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL)
         self.person_listbox = tk.Listbox(
-            list_frame, height=12, exportselection=False
+            list_frame, height=10, exportselection=False
         )
         self.person_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.config(command=self.person_listbox.yview)
@@ -528,13 +532,58 @@ class AttendanceGUI:
         ttk.Button(button_frame, text="Close", command=self.close_dataset_manager).pack(fill=tk.X, pady=10)
         
         details_frame = ttk.LabelFrame(container, text="Person Details", padding="5")
-        details_frame.pack(fill=tk.BOTH, expand=True)
+        details_frame.pack(fill=tk.BOTH, expand=True, pady=(6, 0))
+
         self.person_details_text = tk.Text(details_frame, height=6, wrap=tk.WORD)
         self.person_details_text.pack(fill=tk.BOTH, expand=True)
         self.person_details_text.configure(state='disabled')
         
+        edit_section = ttk.Frame(details_frame)
+        edit_section.pack(fill=tk.X, pady=(8, 0))
+        edit_section.columnconfigure(1, weight=1)
+
+        ttk.Label(edit_section, text="Edit Selected Person", font=('Arial', 10, 'bold')).grid(row=0, column=0, columnspan=2, sticky=tk.W, pady=(0, 4))
+        ttk.Label(edit_section, text="Rank:").grid(row=1, column=0, sticky=tk.W, pady=2)
+        self.edit_rank_entry = ttk.Entry(edit_section, textvariable=self.edit_rank_var)
+        self.edit_rank_entry.grid(row=1, column=1, sticky=(tk.W, tk.E), pady=2, padx=(4, 0))
+
+        ttk.Label(edit_section, text="Position:").grid(row=2, column=0, sticky=tk.W, pady=2)
+        self.edit_position_entry = ttk.Entry(edit_section, textvariable=self.edit_position_var)
+        self.edit_position_entry.grid(row=2, column=1, sticky=(tk.W, tk.E), pady=2, padx=(4, 0))
+
+        ttk.Label(edit_section, text="Permission:").grid(row=3, column=0, sticky=tk.W, pady=2)
+        self.edit_permission_combo = ttk.Combobox(
+            edit_section,
+            textvariable=self.edit_permission_var,
+            values=["Yes", "No"],
+            state="readonly"
+        )
+        self.edit_permission_combo.grid(row=3, column=1, sticky=(tk.W, tk.E), pady=2, padx=(4, 0))
+        self.edit_permission_combo.current(0)
+
+        ttk.Button(edit_section, text="Save Changes", command=self.update_selected_person_metadata).grid(row=4, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(6, 0))
+
         self.refresh_person_list()
         self.update_person_details(None)
+
+    def _populate_person_edit_fields(self, info: Optional[Dict]):
+        """Fill the edit inputs with the selected person's data."""
+        if not self.dataset_window or not hasattr(self, "edit_rank_var"):
+            return
+        if not info:
+            self.edit_rank_var.set('')
+            self.edit_position_var.set('')
+            self.edit_permission_var.set('Yes')
+            if self.edit_permission_combo:
+                self.edit_permission_combo.set('Yes')
+            return
+
+        self.edit_rank_var.set(info.get('rank', ''))
+        self.edit_position_var.set(info.get('position', ''))
+        perm_value = "Yes" if info.get('has_permission') else "No"
+        self.edit_permission_var.set(perm_value)
+        if self.edit_permission_combo:
+            self.edit_permission_combo.set(perm_value)
     
     def close_dataset_manager(self):
         """Close dataset manager window"""
@@ -608,6 +657,7 @@ class AttendanceGUI:
                 )
             )
         self.person_details_text.configure(state='disabled')
+        self._populate_person_edit_fields(info)
     
     def _format_person_message(self, info: Dict) -> str:
         permission_text = "Yes" if info.get('has_permission') else "No"
@@ -634,6 +684,35 @@ class AttendanceGUI:
         self.update_person_details(info)
         self.log(f"Viewing info for {name}")
         messagebox.showinfo("Person Info", message)
+
+    def update_selected_person_metadata(self):
+        """Save edits for the selected person."""
+        name = self.get_selected_person()
+        if not name:
+            return
+
+        rank = self.edit_rank_var.get().strip()
+        position = self.edit_position_var.get().strip()
+        perm_value = self.edit_permission_var.get().strip().lower()
+        if perm_value not in ("yes", "no"):
+            messagebox.showwarning("Invalid Permission", "Choose Yes or No for permission.")
+            return
+        has_permission = perm_value == "yes"
+
+        success = self.dataset_manager.update_person_metadata(
+            name=name,
+            rank=rank,
+            position=position,
+            has_permission=has_permission
+        )
+        if success:
+            info = self.dataset_manager.get_person_info(name)
+            self.update_person_details(info)
+            self.refresh_person_list()
+            self.log(f"Updated details for {name}")
+            messagebox.showinfo("Updated", f"Saved changes for {name}")
+        else:
+            messagebox.showerror("Error", f"Could not update data for {name}")
     
     def delete_person(self):
         """Delete selected person from dataset"""

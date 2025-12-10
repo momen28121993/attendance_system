@@ -10,6 +10,13 @@ venv/
 # OS artifacts
 .DS_Store
 
+# Build artifacts
+dist/
+build/
+
+# Captured attendance photos
+data/attendance/photos/
+
 # Data & logs (uncomment if you don't want to commit datasets/logs)
 # data/
 # logs/

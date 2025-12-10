@@ -346,6 +346,49 @@ class DatasetManager:
                     json.dump(self.metadata, f, indent=2)
             except Exception as e:
                 print(f"❌ Error saving metadata: {e}")
+
+    def update_person_metadata(
+        self,
+        name: str,
+        rank: Optional[str] = None,
+        position: Optional[str] = None,
+        has_permission: Optional[bool] = None
+    ) -> bool:
+        """
+        Update stored metadata fields for a person.
+        Returns True if the person exists and metadata was saved.
+        """
+        with self._lock:
+            if name not in self.embeddings_cache and name not in self.metadata:
+                print(f"⚠ Cannot update metadata; '{name}' not found in dataset.")
+                return False
+
+            meta = dict(self.metadata.get(name, {}))
+            updated = False
+
+            if rank is not None:
+                meta['rank'] = rank
+                updated = True
+
+            if position is not None:
+                meta['position'] = position
+                updated = True
+
+            if has_permission is not None:
+                meta['has_permission'] = bool(has_permission)
+                updated = True
+
+            # Keep existing counters/directories intact
+            meta.setdefault('directory', str(self.dataset_dir / name))
+            meta.setdefault('num_images', meta.get('num_images', 0))
+            meta.setdefault('num_embeddings', len(self.embeddings_cache.get(name, [])))
+
+            self.metadata[name] = meta
+            self.save_metadata()
+
+            if updated:
+                print(f"✓ Updated metadata for '{name}'")
+            return True
     
     def get_all_embeddings(self) -> Dict[str, List[np.ndarray]]:
         """Get all embeddings"""
