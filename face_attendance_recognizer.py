@@ -6,7 +6,7 @@ ArcFace embedding + cosine similarity verification.
 import cv2
 import numpy as np
 import time
-from typing import Optional, Tuple, Dict, List
+from typing import Optional, Tuple, Dict, List, Any
 
 
 class FaceRecognizer:
@@ -14,18 +14,20 @@ class FaceRecognizer:
     Complete face recognition system using ArcFace embeddings and cosine similarity.
     """
 
-    def __init__(self, face_detector, face_embedder, dataset_manager, threshold=0.65):
+    def __init__(self, face_detector, face_embedder, dataset_manager, threshold=0.65, anti_spoof=None):
         """
         Args:
             face_detector: FaceDetector instance
             face_embedder: FaceEmbedder instance
             dataset_manager: DatasetManager instance
             threshold: Cosine similarity threshold for verification
+            anti_spoof: Optional anti-spoofing model (SilentFace) with .predict(frame, bbox)
         """
         self.face_detector = face_detector
         self.face_embedder = face_embedder
         self.dataset_manager = dataset_manager
         self.threshold = threshold
+        self.anti_spoof = anti_spoof
 
         self.known_embeddings = self._prepare_embedding_cache()
 
@@ -105,9 +107,21 @@ class FaceRecognizer:
             face = self.face_detector.extract_face(frame, face_bbox)
             if face is None:
                 continue
-            
-            # Recognize
-            name, similarity, _ = self.recognize_face(face)
+
+            # Liveness / anti-spoof check (fail-closed: treat unknown or errors as spoof)
+            liveness: Dict[str, Any] = {"is_real": True, "real_prob": None, "spoof_prob": None}
+            if self.anti_spoof:
+                try:
+                    prediction = self.anti_spoof.predict(frame, face_bbox)
+                except Exception as exc:  # pylint: disable=broad-except
+                    print(f"⚠ Anti-spoof check failed: {exc}")
+                    prediction = None
+                liveness = prediction or {"is_real": False, "real_prob": None, "spoof_prob": None}
+
+            is_real = liveness.get("is_real", True)
+
+            # Recognize only if liveness passed
+            name, similarity, _ = self.recognize_face(face) if is_real else (None, 0.0, None)
             person_info = self.dataset_manager.get_person_info(name) if name else None
             
             results.append({
@@ -115,8 +129,9 @@ class FaceRecognizer:
                 'face': face,
                 'name': name,
                 'similarity': similarity,
-                'verified': name is not None,
-                'info': person_info
+                'verified': name is not None and is_real,
+                'info': person_info,
+                'liveness': liveness
             })
         
         return results
@@ -137,31 +152,40 @@ class FaceRecognizer:
             name = result['name']
             similarity = result['similarity']
             verified = result['verified']
+            liveness = result.get('liveness') or {}
+            is_real = liveness.get('is_real', True)
+            live_score = liveness.get('real_prob')
             
-            # Choose color based on verification
+            # Choose color based on verification + liveness
             details = result.get('info') or {}
             has_perm = details.get('has_permission')
-            if verified:
+            extra_text_lines = []
+
+            if not is_real:
+                color = (0, 0, 255)  # red for spoof
+                label_score = f" ({live_score:.2f})" if live_score is not None else ""
+                label = f"Spoof{label_score}"
+                if live_score is not None:
+                    extra_text_lines.append(f"Liveness: {live_score:.2f}")
+            elif verified:
                 label = f"{name} ({similarity:.2f})"
-                if has_perm:
-                    color = (0, 255, 0)  # green for permitted
-                else:
-                    color = (0, 0, 255)  # red for no permission
-                extra_lines = []
+                color = (0, 255, 0) if has_perm else (0, 0, 255)
                 if details:
                     rank = details.get('rank') or "N/A"
                     position = details.get('position') or "N/A"
                     perm_str = "Yes" if has_perm else "No"
-                    extra_lines = [
+                    extra_text_lines.extend([
                         f"{name} | Rank: {rank}",
                         f"Position: {position}",
                         f"Perm: {perm_str}",
-                    ]
-                extra_text_lines = extra_lines
+                    ])
+                if live_score is not None:
+                    extra_text_lines.append(f"Liveness: {live_score:.2f}")
             else:
                 color = (0, 255, 255)  # yellow for unknown
                 label = f"Unknown ({similarity:.2f})"
-                extra_text_lines = []
+                if live_score is not None:
+                    extra_text_lines.append(f"Liveness: {live_score:.2f}")
             
             # Draw rectangle
             cv2.rectangle(output, (x, y), (x+w, y+h), color, 2)

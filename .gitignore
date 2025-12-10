@@ -17,6 +17,10 @@ build/
 # Captured attendance photos
 data/attendance/photos/
 
+# Anti-spoofing weights (downloaded at runtime)
+model/antispoof/
+data/models/antispoof/
+
 # Data & logs (uncomment if you don't want to commit datasets/logs)
 # data/
 # logs/

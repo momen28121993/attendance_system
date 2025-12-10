@@ -17,6 +17,7 @@ from face_attendance_dataset import DatasetManager
 from face_attendance_logger import AttendanceLogger
 from face_attendance_recognizer import FaceRecognizer
 from face_attendance_gui import AttendanceGUI
+from face_attendance_antispoof import SilentFaceAntiSpoof
 
 def main():
     """Run the GUI application"""
@@ -57,15 +58,29 @@ def main():
         save_photos=True
     )
     
-    print("\n5. Initializing face recognizer...")
+    print("\n5. Loading anti-spoofing model (SilentFace)...")
+    anti_spoof = None
+    if Config.ANTI_SPOOF_ENABLED:
+        anti_spoof = SilentFaceAntiSpoof(
+            model_dir=Config.ANTI_SPOOF_MODEL_PATH.parent,
+            threshold=Config.ANTI_SPOOF_THRESHOLD,
+            device=Config.ANTI_SPOOF_DEVICE,
+            download_url=Config.ANTI_SPOOF_MODEL_URL,
+        )
+        print("   SilentFace ready (model will download on first use)")
+    else:
+        print("   Anti-spoofing disabled via config")
+
+    print("\n6. Initializing face recognizer...")
     face_recognizer = FaceRecognizer(
         face_detector=face_detector,
         face_embedder=face_embedder,
         dataset_manager=dataset_manager,
-        threshold=Config.SIMILARITY_THRESHOLD
+        threshold=Config.SIMILARITY_THRESHOLD,
+        anti_spoof=anti_spoof,
     )
     
-    print("\n6. Starting GUI...")
+    print("\n7. Starting GUI...")
     print("="*60 + "\n")
     
     # Create and run GUI

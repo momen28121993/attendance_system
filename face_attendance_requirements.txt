@@ -19,3 +19,6 @@ tk  # Usually included with Python
 # Optional but recommended
 matplotlib>=3.5.0  # For visualization
 scikit-learn>=1.0.0  # For evaluation metrics
+
+# Anti-spoofing (SilentFace)
+torch>=2.1.0

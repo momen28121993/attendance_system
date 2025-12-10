@@ -60,3 +60,7 @@ pyinstaller --onefile --windowed --name face-attendance ^
 ```
 
 Artifacts live in `dist/`. On macOS you may need to right-click → Open the first time because the app is unsigned. On Windows, double-click `dist\\face-attendance.exe` to start the GUI.
+
+## Anti-spoofing (SilentFace)
+- Torch is listed in `face_attendance_requirements.txt`; ensure it is installed for liveness checks.
+- The first run will download the ~2MB SilentFace weight to `model/antispoof/`. The file is ignored by Git.

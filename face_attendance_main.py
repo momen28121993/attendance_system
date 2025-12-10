@@ -47,6 +47,16 @@ class Config:
     FRAME_WIDTH = 640
     FRAME_HEIGHT = 480
 
+    # Anti-spoofing (SilentFace)
+    ANTI_SPOOF_ENABLED = True
+    ANTI_SPOOF_THRESHOLD = 0.8
+    ANTI_SPOOF_MODEL_URL = (
+        "https://raw.githubusercontent.com/minivision-ai/Silent-Face-Anti-Spoofing/master/resources/anti_spoof_models/"
+        "2.7_80x80_MiniFASNetV2.pth"
+    )
+    ANTI_SPOOF_MODEL_PATH = MODELS_DIR / "antispoof" / "2.7_80x80_MiniFASNetV2.pth"
+    ANTI_SPOOF_DEVICE: str | None = None
+
 if __name__ == "__main__":
     print("Face Recognition Attendance System")
     print("=" * 50)
