@@ -486,7 +486,9 @@ class SilentFaceAntiSpoof:
         self.download_url = download_url
         self.device = torch.device(device) if device else torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.model: Optional[nn.Module] = None
-        self.conv6_kernel = get_kernel(80, 80)
+        self.input_size: Tuple[int, int] = (80, 80)
+        self.scale: Optional[float] = 2.7  # match default 2.7_80x80 model crop
+        self.conv6_kernel = get_kernel(*self.input_size)
         self._lock = threading.Lock()
         self._load_error_reported = False
         self.disabled = False
@@ -503,6 +505,20 @@ class SilentFaceAntiSpoof:
         if self.model is not None:
             return
         self._ensure_model_file()
+        # Derive input size and scale from file name if possible (e.g. 2.7_80x80_MiniFASNetV2.pth)
+        stem_parts = self.model_path.stem.split("_")
+        if len(stem_parts) >= 2 and "x" in stem_parts[1]:
+            try:
+                h, w = map(int, stem_parts[1].split("x"))
+                self.input_size = (w, h)
+                self.conv6_kernel = get_kernel(h, w)
+            except Exception:
+                pass
+            try:
+                scale_candidate = float(stem_parts[0])
+                self.scale = scale_candidate
+            except Exception:
+                pass
         state_dict = torch.load(self.model_path, map_location=self.device)
         if next(iter(state_dict)).startswith("module."):
             state_dict = {k.replace("module.", "", 1): v for k, v in state_dict.items()}
@@ -511,6 +527,57 @@ class SilentFaceAntiSpoof:
         model.to(self.device)
         model.eval()
         self.model = model
+
+    def _crop_with_scale(self, frame: np.ndarray, bbox: Tuple[int, int, int, int]) -> Optional[np.ndarray]:
+        """
+        Crop using the same scaling strategy as the reference implementation
+        (expands the box by `scale` while staying inside image bounds).
+        """
+        if self.scale is None:
+            # Fallback: simple resize of the detected face
+            x, y, w, h = bbox
+            x1 = max(0, x)
+            y1 = max(0, y)
+            x2 = min(frame.shape[1], x + w)
+            y2 = min(frame.shape[0], y + h)
+            if x2 <= x1 or y2 <= y1:
+                return None
+            patch = frame[y1:y2, x1:x2]
+            return cv2.resize(patch, self.input_size)
+
+        x, y, w, h = bbox
+        src_h, src_w = frame.shape[:2]
+        # Mirror of generate_patches.CropImage._get_new_box
+        scale = min((src_h - 1) / max(h, 1), min((src_w - 1) / max(w, 1), self.scale))
+        new_w = w * scale
+        new_h = h * scale
+        cx, cy = w / 2 + x, h / 2 + y
+        x1 = cx - new_w / 2
+        y1 = cy - new_h / 2
+        x2 = cx + new_w / 2
+        y2 = cy + new_h / 2
+
+        # Clamp to image boundaries while preserving size as much as possible
+        if x1 < 0:
+            x2 -= x1
+            x1 = 0
+        if y1 < 0:
+            y2 -= y1
+            y1 = 0
+        if x2 > src_w - 1:
+            x1 -= x2 - src_w + 1
+            x2 = src_w - 1
+        if y2 > src_h - 1:
+            y1 -= y2 - src_h + 1
+            y2 = src_h - 1
+
+        x1, y1, x2, y2 = map(int, [x1, y1, x2, y2])
+        if x2 <= x1 or y2 <= y1:
+            return None
+        patch = frame[y1 : y2 + 1, x1 : x2 + 1]
+        if patch.size == 0:
+            return None
+        return cv2.resize(patch, self.input_size)
 
     def predict(self, frame: np.ndarray, bbox: Tuple[int, int, int, int]) -> Optional[Dict]:
         """
@@ -531,18 +598,13 @@ class SilentFaceAntiSpoof:
                 return None
 
         x, y, w, h = bbox
-        margin = int(max(w, h) * 0.2)
-        x1 = max(0, x - margin)
-        y1 = max(0, y - margin)
-        x2 = min(frame.shape[1], x + w + margin)
-        y2 = min(frame.shape[0], y + h + margin)
-        crop = frame[y1:y2, x1:x2]
-        if crop.size == 0:
+        crop = self._crop_with_scale(frame, bbox)
+        if crop is None or crop.size == 0:
             return None
 
         try:
             rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
-            resized = cv2.resize(rgb, (80, 80))
+            resized = cv2.resize(rgb, self.input_size)
         except Exception:
             return None
 

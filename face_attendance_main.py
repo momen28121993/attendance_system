@@ -49,7 +49,7 @@ class Config:
 
     # Anti-spoofing (SilentFace)
     ANTI_SPOOF_ENABLED = False
-    ANTI_SPOOF_THRESHOLD = 0.5
+    ANTI_SPOOF_THRESHOLD = 0.3  # lower = less strict (helps reduce false negatives)
     ANTI_SPOOF_MODEL_URL = (
         "https://raw.githubusercontent.com/minivision-ai/Silent-Face-Anti-Spoofing/master/resources/anti_spoof_models/"
         "2.7_80x80_MiniFASNetV2.pth"

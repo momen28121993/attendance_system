@@ -1,29 +1,38 @@
 {
-  "momen": {
-    "rank": "ra2ed",
-    "age": 32,
+  "abd elnaby": {
+    "rank": "eng",
+    "position": "CEO",
     "has_permission": true,
     "num_images": 120,
-    "num_embeddings": 0,
-    "added_timestamp": 1763548566.762469,
+    "num_embeddings": 120,
+    "added_timestamp": 1765451939.05697,
+    "directory": "/Users/moamenahmed/Desktop/AI_projects/attendance_system/data/faces/abd elnaby"
+  },
+  "momen": {
+    "rank": "eng",
+    "position": "head manger",
+    "has_permission": true,
+    "num_images": 120,
+    "num_embeddings": 120,
+    "added_timestamp": 1765452018.340878,
     "directory": "/Users/moamenahmed/Desktop/AI_projects/attendance_system/data/faces/momen"
   },
-  "momen ahmed": {
-    "rank": "ra2ed",
-    "age": 32,
+  "mostafa hesham": {
+    "rank": "eng",
+    "position": "level1",
     "has_permission": true,
     "num_images": 120,
     "num_embeddings": 120,
-    "added_timestamp": 1763549127.5444632,
-    "directory": "/Users/moamenahmed/Desktop/AI_projects/attendance_system/data/faces/momen ahmed"
+    "added_timestamp": 1765452263.823436,
+    "directory": "/Users/moamenahmed/Desktop/AI_projects/attendance_system/data/faces/mostafa hesham"
   },
-  "Mohamed Ehab": {
-    "rank": "Major",
-    "position": "Battery commander",
+  "3ala2": {
+    "rank": "eng",
+    "position": "head eng",
     "has_permission": true,
     "num_images": 120,
     "num_embeddings": 120,
-    "added_timestamp": 1763646918.4591277,
-    "directory": "E:\\mohamed\\projects\\attendance_system-main\\data\\faces\\Mohamed Ehab"
+    "added_timestamp": 1765452357.336803,
+    "directory": "/Users/moamenahmed/Desktop/AI_projects/attendance_system/data/faces/3ala2"
   }
 }

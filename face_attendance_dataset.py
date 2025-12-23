@@ -70,10 +70,14 @@ class DatasetManager:
         person_dir.mkdir(exist_ok=True)
         
         # Initialize camera
+        window_name = "Add Person - Press q to quit"
         cap = cv2.VideoCapture(camera_id)
         if not cap.isOpened():
             print("❌ Failed to open camera")
             return False
+        # Pre-create window so we can monitor its visibility without crashing
+        cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+        show_window = True
         
         print(f"\n📸 Capturing {num_images} images for '{name}'")
         print("Instructions:")
@@ -89,70 +93,85 @@ class DatasetManager:
         images_saved = 0
         base_face_paths: List[Path] = []
         
-        while captured < num_images:
-            ret, frame = cap.read()
-            if not ret:
-                print("❌ Failed to read frame")
-                break
-            
-            # Detect faces
-            faces = face_detector.detect(frame)
-            
-            # Display
-            display_frame = frame.copy()
-            
-            if len(faces) > 0:
-                # Use largest face
-                face_bbox = max(faces, key=lambda f: f[2] * f[3])
-                x, y, w, h = face_bbox
+        try:
+            while captured < num_images:
+                ret, frame = cap.read()
+                if not ret:
+                    print("❌ Failed to read frame")
+                    break
                 
-                # Draw rectangle
-                color = (0, 255, 0) if time.time() - last_capture_time > delay else (0, 165, 255)
-                cv2.rectangle(display_frame, (x, y), (x+w, y+h), color, 2)
+                # Detect faces
+                faces = face_detector.detect(frame)
                 
-                # Capture if delay passed
-                current_time = time.time()
-                if current_time - last_capture_time > delay:
-                    # Extract face
-                    face = face_detector.extract_face(
-                        frame, face_bbox, target_size=face_embedder.input_size
+                # Display
+                display_frame = frame.copy()
+                
+                if len(faces) > 0:
+                    # Use largest face
+                    face_bbox = max(faces, key=lambda f: f[2] * f[3])
+                    x, y, w, h = face_bbox
+                    
+                    # Draw rectangle
+                    color = (0, 255, 0) if time.time() - last_capture_time > delay else (0, 165, 255)
+                    cv2.rectangle(display_frame, (x, y), (x+w, y+h), color, 2)
+                    
+                    # Capture if delay passed
+                    current_time = time.time()
+                    if current_time - last_capture_time > delay:
+                        # Extract face
+                        face = face_detector.extract_face(
+                            frame, face_bbox, target_size=face_embedder.input_size
+                        )
+                        if face is not None:
+                            img_path = person_dir / f"{name}_{captured+1:03d}.jpg"
+                            cv2.imwrite(str(img_path), face)
+                            base_face_paths.append(img_path)
+                            images_saved += 1
+                            
+                            embedding = face_embedder.get_embedding(face)
+                            if embedding is not None:
+                                embeddings.append(self._flatten_embedding(embedding))
+                            captured += 1
+                            last_capture_time = current_time
+                            print(f"  ✓ Captured {captured}/{num_images}")
+                else:
+                    cv2.putText(
+                        display_frame,
+                        "No face detected",
+                        (10, 60),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.8,
+                        (0, 0, 255),
+                        2,
                     )
-                    if face is not None:
-                        img_path = person_dir / f"{name}_{captured+1:03d}.jpg"
-                        cv2.imwrite(str(img_path), face)
-                        base_face_paths.append(img_path)
-                        images_saved += 1
-                        
-                        embedding = face_embedder.get_embedding(face)
-                        if embedding is not None:
-                            embeddings.append(self._flatten_embedding(embedding))
-                        captured += 1
-                        last_capture_time = current_time
-                        print(f"  ✓ Captured {captured}/{num_images}")
-            else:
-                cv2.putText(
-                    display_frame,
-                    "No face detected",
-                    (10, 60),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.8,
-                    (0, 0, 255),
-                    2,
-                )
-            
-            # Display progress
-            progress_text = f"Captured: {captured}/{num_images}"
-            cv2.putText(display_frame, progress_text, (10, 30),
-                       cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-            
-            cv2.imshow('Add Person - Press q to quit', display_frame)
-            
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                print("\n⚠ Capture interrupted by user")
-                break
-        
-        cap.release()
-        cv2.destroyAllWindows()
+                
+                # Display progress
+                progress_text = f"Captured: {captured}/{num_images}"
+                cv2.putText(display_frame, progress_text, (10, 30),
+                           cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+                
+                if show_window:
+                    try:
+                        cv2.imshow(window_name, display_frame)
+                        # If window was closed by user, stop capturing gracefully
+                        if cv2.getWindowProperty(window_name, cv2.WND_PROP_VISIBLE) < 1:
+                            print("\n⚠ Capture window closed by user")
+                            break
+                        # Allow user to quit via q or ESC
+                        key = cv2.waitKey(1) & 0xFF
+                        if key in (ord('q'), 27):
+                            print("\n⚠ Capture interrupted by user")
+                            break
+                    except cv2.error as exc:
+                        # If display fails (e.g., window closed mid-loop), disable further UI drawing
+                        print(f"⚠ Capture window error: {exc}")
+                        show_window = False
+        finally:
+            cap.release()
+            try:
+                cv2.destroyWindow(window_name)
+            except Exception:
+                cv2.destroyAllWindows()
         
         if captured < 3:
             print(f"❌ Insufficient images captured ({captured}). Need at least 3.")

@@ -67,7 +67,7 @@ def main():
             device=Config.ANTI_SPOOF_DEVICE,
             download_url=Config.ANTI_SPOOF_MODEL_URL,
         )
-        print("   SilentFace ready (model will download on first use)")
+        print(f"   SilentFace ready (threshold={Config.ANTI_SPOOF_THRESHOLD}; model will download on first use)")
     else:
         print("   Anti-spoofing disabled via config")
 

@@ -392,13 +392,19 @@ class AttendanceGUI:
             self.stop_camera()
         
         self.root.update_idletasks()
-        success = self.dataset_manager.add_person(
-            name, self.face_detector, self.face_embedder,
-            rank=rank, position=position, has_permission=has_permission,
-            camera_id=Config.CAMERA_ID,
-            num_images=Config.IMAGES_PER_PERSON,
-            delay=Config.CAPTURE_DELAY
-        )
+        try:
+            success = self.dataset_manager.add_person(
+                name, self.face_detector, self.face_embedder,
+                rank=rank, position=position, has_permission=has_permission,
+                camera_id=Config.CAMERA_ID,
+                num_images=Config.IMAGES_PER_PERSON,
+                delay=Config.CAPTURE_DELAY
+            )
+        except Exception as exc:  # pylint: disable=broad-except
+            # Prevent the whole Tk app from closing if OpenCV capture fails
+            self.log(f"✗ Error while adding {name}: {exc}")
+            messagebox.showerror("Error", f"Failed to add {name}.\n\n{exc}")
+            success = False
         
         if success:
             # Update recognizer
